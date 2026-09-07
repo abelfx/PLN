@@ -1,3 +1,7 @@
+;PRISM FFI bootstrap: load safe Python bridge (does NOT modify PeTTa internals)
+!(import! &self (library lib_import))
+!(import_prolog_functions_from_file "prism/prism_ffi.pl" (prism-score))
+
 ;Shortcut for and with 5 args
 (= (and5 $0 $1 $2 $3 $4)
    (and $0 (and $1 (and $2 (and $3 $4)))))
@@ -362,9 +366,23 @@
 (= (PriorityRank (Sentence ($x (stv $f $c)) $Ev1)) $c)
 (= (PriorityRank ()) -99999.0)
 
+;candidate evaluation with optional Goal guidance (PRISM hook)
+(= (PriorityRankGoal $Goal ()) -99999.0)
+(= (PriorityRankGoal $Goal (Sentence ($x (stv $f $c)) $Ev1))
+   (if (== $Goal ())
+       $c
+       (let $score (prism-score (Sentence ($x (stv $f $c)) $Ev1) $Goal)
+            (if (== $score Error)
+                $c
+                $score))))
+
 ;candidate elimination based on negated priority
 (= (PriorityRankNeg (Sentence ($x (stv $f $c)) $Ev1)) (- 0.0 $c))
 (= (PriorityRankNeg ()) -99999.0)
+
+(= (PriorityRankNegGoal $Goal ()) -99999.0)
+(= (PriorityRankNegGoal $Goal $cand)
+   (- 0.0 (PriorityRankGoal $Goal $cand)))
 
 ;Return limited-sized version of $L (bounded PQ functionality)
 (= (LimitSize $L $size)
@@ -373,11 +391,11 @@
        (let $lowestPriorityItem (BestCandidate PriorityRankNeg () $L)
             (LimitSize (exclude-item $lowestPriorityItem $L) $size))))
 
-;Priority-queue based task ranking deriver with belief buffer
-(= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize)
+;Priority-queue based task ranking deriver with belief buffer and optional Goal
+(= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize $Goal)
    (if (or (> $steps $maxsteps) (== $Tasks ()))
        ($Tasks $Beliefs)
-       (let (Sentence $x $Ev1) (BestCandidate PriorityRank () $Tasks)
+       (let (Sentence $x $Ev1) (BestCandidate (PriorityRankGoal $Goal) () $Tasks)
             (let $derivations
                  (collapse (superpose ((let* (((Sentence $y $Ev2) (superpose $Beliefs)))
                                              (if (StampDisjoint $Ev1 $Ev2)
@@ -394,10 +412,16 @@
                                     (+ $steps 1)
                                     $maxsteps
                                     $taskqueuesize
-                                    $beliefqueuesize))))))
+                                    $beliefqueuesize
+                                    $Goal))))))
 
+;Legacy 6-arg overload (defaults $Goal to ())
+(= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize)
+   (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize ()))
+
+;Legacy 5-arg overload (defaults $steps to 1 and $Goal to ())
 (= (PLN.Derive $Tasks $Beliefs $maxsteps $taskqueuesize $beliefqueuesize)
-   (PLN.Derive $Tasks $Beliefs 1 $maxsteps $taskqueuesize $beliefqueuesize))
+   (PLN.Derive $Tasks $Beliefs 1 $maxsteps $taskqueuesize $beliefqueuesize ()))
 
 (= (PLN.Derive $Tasks $Beliefs $maxsteps)
    (PLN.Derive $Tasks $Beliefs $maxsteps (PLN.Config.TaskQueueSize) (PLN.Config.BeliefQueueSize)))
@@ -415,7 +439,7 @@
 ;Pose a question of a certain term to the system on some knowledge base
 (= (PLN.Query $Tasks $Beliefs $term $maxsteps $taskqueuesize $beliefqueuesize)
    (BestConfidenceCandidate
-    (collapse (let ($TasksRet $BeliefsRet) (PLN.Derive $Tasks $Beliefs $maxsteps $taskqueuesize $beliefqueuesize)
+    (collapse (let ($TasksRet $BeliefsRet) (PLN.Derive $Tasks $Beliefs 1 $maxsteps $taskqueuesize $beliefqueuesize $term)
                     (case (superpose $BeliefsRet)
                           (((Sentence ($Term $TV) $Ev) (case (== $Term $term)
                                                              ((True ($TV $Ev)))))))))))
@@ -428,3 +452,4 @@
 
 (= (PLN.Query $kb $term)
    (PLN.Query $kb $term (PLN.Config.MaxSteps))) ;default steps bound
+
