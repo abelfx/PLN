@@ -1,6 +1,6 @@
 ;PRISM FFI bootstrap: load safe Python bridge (does NOT modify PeTTa internals)
 !(import! &self (library lib_import))
-!(import_prolog_functions_from_file "prism/prism_ffi.pl" (prism-score))
+!(import_prolog_functions_from_file "prism/ffi/prism_ffi.pl" (prism-score prism-filter-beliefs))
 
 ;Shortcut for and with 5 args
 (= (and5 $0 $1 $2 $3 $4)
@@ -391,29 +391,45 @@
        (let $lowestPriorityItem (BestCandidate PriorityRankNeg () $L)
             (LimitSize (exclude-item $lowestPriorityItem $L) $size))))
 
+(= (LimitSizeGoal $L $size $Goal)
+   (if (< (length $L) $size)
+       $L
+       (let $lowestPriorityItem (BestCandidate (PriorityRankNegGoal $Goal) () $L)
+            (LimitSizeGoal (exclude-item $lowestPriorityItem $L) $size $Goal))))
+
+;Stage 0: Premise pre-filtering hook (PRISM §4)
+(= (PremiseFilter $Candidate $Goal $Beliefs)
+   (if (or (== $Goal ()) (== $Candidate ()))
+       $Beliefs
+       (let $filtered (prism-filter-beliefs $Candidate $Goal $Beliefs)
+            (if (or (== $filtered Error) (== $filtered ()))
+                $Beliefs
+                $filtered))))
+
 ;Priority-queue based task ranking deriver with belief buffer and optional Goal
 (= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize $Goal)
    (if (or (> $steps $maxsteps) (== $Tasks ()))
        ($Tasks $Beliefs)
        (let (Sentence $x $Ev1) (BestCandidate (PriorityRankGoal $Goal) () $Tasks)
-            (let $derivations
-                 (collapse (superpose ((let* (((Sentence $y $Ev2) (superpose $Beliefs)))
-                                             (if (StampDisjoint $Ev1 $Ev2)
-                                                 (let $stamp (msort (append $Ev1 $Ev2))
-                                                      (superpose ((case (|- $x $y)
-                                                                    ((($Txy $TVxy) (Sentence ($Txy $TVxy) $stamp))))
-                                                                  (case (|- $y $x)
-                                                                    ((($Tyx $TVyx) (Sentence ($Tyx $TVyx) $stamp)))))))
-                                                 (empty)))
-                                       (case (|- $x) ((($T3 $TV3) (Sentence ($T3 $TV3) $Ev1)))))))
-                 (progn (println! (SELECTED (Sentence $x $Ev1)))
-                        (PLN.Derive (LimitSize (exclude-item (Sentence $x $Ev1) (ConcatUnique $Tasks $derivations)) $taskqueuesize)
-                                    (LimitSize (ConcatUnique $Beliefs $derivations) $beliefqueuesize)
-                                    (+ $steps 1)
-                                    $maxsteps
-                                    $taskqueuesize
-                                    $beliefqueuesize
-                                    $Goal))))))
+            (let $filteredBeliefs (PremiseFilter (Sentence $x $Ev1) $Goal $Beliefs)
+                 (let $derivations
+                      (collapse (superpose ((let* (((Sentence $y $Ev2) (superpose $filteredBeliefs)))
+                                                  (if (StampDisjoint $Ev1 $Ev2)
+                                                      (let $stamp (msort (append $Ev1 $Ev2))
+                                                           (superpose ((case (|- $x $y)
+                                                                         ((($Txy $TVxy) (Sentence ($Txy $TVxy) $stamp))))
+                                                                       (case (|- $y $x)
+                                                                         ((($Tyx $TVyx) (Sentence ($Tyx $TVyx) $stamp)))))))
+                                                      (empty)))
+                                            (case (|- $x) ((($T3 $TV3) (Sentence ($T3 $TV3) $Ev1)))))))
+                      (progn (println! (SELECTED (Sentence $x $Ev1)))
+                             (PLN.Derive (LimitSize (exclude-item (Sentence $x $Ev1) (ConcatUnique $Tasks $derivations)) $taskqueuesize)
+                                         (LimitSize (ConcatUnique $Beliefs $derivations) $beliefqueuesize)
+                                         (+ $steps 1)
+                                         $maxsteps
+                                         $taskqueuesize
+                                         $beliefqueuesize
+                                         $Goal)))))))
 
 ;Legacy 6-arg overload (defaults $Goal to ())
 (= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize)
