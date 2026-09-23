@@ -406,6 +406,20 @@
                 $Beliefs
                 $filtered))))
 
+;One-step apply for PRISM search: real `|-` + truth formulas, no Python TV rewrite.
+(= (PLN.Apply (Sentence $x $Ev1) (Sentence $y $Ev2))
+   (if (StampDisjoint $Ev1 $Ev2)
+       (let $stamp (msort (append $Ev1 $Ev2))
+            (superpose
+              ((case (|- $x $y)
+                     ((($Txy $TVxy) (Sentence ($Txy $TVxy) $stamp))))
+               (case (|- $y $x)
+                     ((($Tyx $TVyx) (Sentence ($Tyx $TVyx) $stamp)))))))
+       (empty)))
+
+(= (PLN.Apply (Sentence $x $Ev1))
+   (case (|- $x) ((($T3 $TV3) (Sentence ($T3 $TV3) $Ev1)))))
+
 ;Priority-queue based task ranking deriver with belief buffer and optional Goal
 (= (PLN.Derive $Tasks $Beliefs $steps $maxsteps $taskqueuesize $beliefqueuesize $Goal)
    (if (or (> $steps $maxsteps) (== $Tasks ()))
