@@ -1,6 +1,6 @@
 ;PRISM FFI bootstrap: load safe Python bridge (does NOT modify PeTTa internals)
 !(import! &self (library lib_import))
-!(import_prolog_functions_from_file "prism/ffi/prism_ffi.pl" (prism-score prism-filter-beliefs))
+!(import_prolog_functions_from_file "prism/src/prism/adapters/petta/prism_ffi.pl" (prism-score prism-filter-beliefs))
 
 ;Shortcut for and with 5 args
 (= (and5 $0 $1 $2 $3 $4)
@@ -482,4 +482,3 @@
 
 (= (PLN.Query $kb $term)
    (PLN.Query $kb $term (PLN.Config.MaxSteps))) ;default steps bound
-
